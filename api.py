@@ -10,6 +10,9 @@ import uuid
 from optparse import OptionParser
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
+from scoring import get_score
+from scoring import get_interests
+
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
 ADMIN_SALT = "42"
@@ -36,32 +39,118 @@ GENDERS = {
 }
 
 
-class CharField(object):
-    pass
+class DeclarativeMeta(type):
+
+    def __setattr__(cls, attr, value):
+        try:
+            result = cls.__dict__[attr].validate(value)
+            if isinstance(result, AttributeError):
+                raise AttributeError(result.message.format(cls.__name__, attr))
+            elif result:
+                cls.__dict__[attr].value = value
+        except KeyError:
+            raise AttributeError('{}: not expected attribute <{}>'.format(cls.__name__, attr))
 
 
-class ArgumentsField(object):
-    pass
+class FieldBase(object):
+
+    def __init__(self, required, nullable):
+        self.required = required
+        self.nullable = nullable
+
+    def validate(self, value):
+        if self.required and value is None:
+            return AttributeError('{}: attribute <{}> is required')
+        if not (value or self.nullable):
+            return AttributeError('{}: attribute <{}> is not nullable')
+        return True
+
+    def __get__(self, instance, owner):
+        if hasattr(self, 'value'):
+            return self.value
+
+
+class CharField(FieldBase):
+
+    def __init__(self, required, nullable):
+        super(CharField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        return super(CharField, self).validate(value)
+
+
+class ArgumentsField(FieldBase):
+    def __init__(self, required, nullable, _type=dict):
+        super(ArgumentsField, self).__init__(required, nullable)
 
 
 class EmailField(CharField):
-    pass
+    def __init__(self, required, nullable, _type=str):
+        super(EmailField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        if '@' in value:
+            return super(CharField, self).validate(value)
+        else:
+            return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
 
 
-class PhoneField(object):
-    pass
+class PhoneField(FieldBase):
+
+    def __init__(self, required, nullable):
+        super(PhoneField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        value = str(value)
+        if len(value) == 11 and value[0] == '7':
+            return super(PhoneField, self).validate(value)
+        else:
+            return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
 
 
-class DateField(object):
-    pass
+class DateField(FieldBase):
+
+    def __init__(self, required, nullable):
+        super(DateField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        result = super(DateField, self).validate(value)
+        if isinstance(result, AttributeError):
+            return result
+        date = value.split('.')
+        date.reverse()
+        date = datetime.datetime(*map(int, date))
+        return date
 
 
-class BirthDayField(object):
-    pass
+class BirthDayField(DateField):
+
+    def __init__(self, required, nullable):
+        super(BirthDayField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        result = super(BirthDayField, self).validate(value)
+        if isinstance(result, datetime.datetime):
+            delta = datetime.datetime.now() - result
+            if delta.days // 365 < 70:
+                return True
+            else:
+                return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+        return result
 
 
-class GenderField(object):
-    pass
+class GenderField(FieldBase):
+
+    def __init__(self, required, nullable):
+        super(GenderField, self).__init__(required, nullable)
+
+    def validate(self, value):
+        try:
+            result = int(value)
+            if result not in {0, 1, 2}:
+                return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+        except ValueError:
+            return super(GenderField, self).validate(value)
 
 
 class ClientIDsField(object):
@@ -83,6 +172,7 @@ class OnlineScoreRequest(object):
 
 
 class MethodRequest(object):
+    __metaclass__ = DeclarativeMeta
     account = CharField(required=False, nullable=True)
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
@@ -104,14 +194,28 @@ def check_auth(request):
     return False
 
 
+def set_attribute(obj, request):
+    for attr in dir(obj):
+        if not attr.startswith('__'):
+            setattr(obj, attr, request['body'][attr])
+
+
 def method_handler(request, ctx, store):
-    response, code = None, None
+    try:
+        set_attribute(MethodRequest, request)
+        check_auth(MethodRequest)
+    except (ValueError, AttributeError) as err:
+        logging.exception('Attribute validation error: %s, context: %s' % (err.message, ctx["request_id"]))
+        response, code = err.message ,INVALID_REQUEST
+
     return response, code
 
 
 class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
-        "method": method_handler
+        "method": method_handler,
+        "online_score": get_score,
+        "clients_interests": get_interests
     }
     store = None
 
@@ -129,7 +233,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
             code = BAD_REQUEST
 
         if request:
-            path = self.path.strip("/")
+            path = self.path.strip("/")[-2]
             logging.info("%s: %s %s" % (self.path, data_string, context["request_id"]))
             if path in self.router:
                 try:
