@@ -69,6 +69,10 @@ class FieldBase(object):
         if hasattr(self, 'value'):
             return self.value
 
+    @staticmethod
+    def _error_message(value):
+        return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+
 
 class CharField(FieldBase):
 
@@ -92,7 +96,7 @@ class EmailField(CharField):
         if '@' in value:
             return super(CharField, self).validate(value)
         else:
-            return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+            return self._error_message(value)
 
 
 class PhoneField(FieldBase):
@@ -105,7 +109,7 @@ class PhoneField(FieldBase):
         if len(value) == 11 and value[0] == '7':
             return super(PhoneField, self).validate(value)
         else:
-            return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+            return self._error_message(value)
 
 
 class DateField(FieldBase):
@@ -135,7 +139,7 @@ class BirthDayField(DateField):
             if delta.days // 365 < 70:
                 return True
             else:
-                return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+                return self._error_message(value)
         return result
 
 
@@ -148,13 +152,31 @@ class GenderField(FieldBase):
         try:
             result = int(value)
             if result not in {0, 1, 2}:
-                return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+                raise ValueError
         except ValueError:
-            return super(GenderField, self).validate(value)
+            return self._error_message(value)
+        return super(GenderField, self).validate(value)
 
 
-class ClientIDsField(object):
-    pass
+class ClientIDsField(FieldBase):
+
+    def __init__(self, required, nullable=False):
+        super(ClientIDsField, self).__init__(required, nullable)
+
+    @staticmethod
+    def _partial_isinstance(func, cls):
+        def wrapper(x):
+            return func(x, cls)
+        return wrapper
+
+    def validate(self, value):
+
+        result = super(ClientIDsField, self).validate(value)
+        if not isinstance(result, AttributeError):
+            func = self._partial_isinstance(isinstance, int)
+            if not all(map(func, value)):
+                return self._error_message(value)
+        return result
 
 
 class ClientsInterestsRequest(object):
