@@ -3,13 +3,14 @@
 
 import abc
 import json
-import datetime
+import uuid
 import logging
 import hashlib
-import uuid
+import datetime
 from optparse import OptionParser
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
+from store import Store
 from scoring import get_score
 from scoring import get_interests
 
@@ -49,7 +50,8 @@ class DeclarativeMeta(type):
             elif result:
                 cls.__dict__[attr].value = value
         except KeyError:
-            raise AttributeError('{}: not expected attribute <{}>'.format(cls.__name__, attr))
+            pass
+            #raise AttributeError('{}: not expected attribute <{}>'.format(cls.__name__, attr))
 
 
 class FieldBase(object):
@@ -180,11 +182,13 @@ class ClientIDsField(FieldBase):
 
 
 class ClientsInterestsRequest(object):
+    __metaclass__ = DeclarativeMeta
     client_ids = ClientIDsField(required=True)
     date = DateField(required=False, nullable=True)
 
 
 class OnlineScoreRequest(object):
+    __metaclass__ = DeclarativeMeta
     first_name = CharField(required=False, nullable=True)
     last_name = CharField(required=False, nullable=True)
     email = EmailField(required=False, nullable=True)
@@ -207,7 +211,7 @@ class MethodRequest(object):
 
 
 def check_auth(request):
-    if request.login == ADMIN_LOGIN:
+    if request.is_admin:
         digest = hashlib.sha512(datetime.datetime.now().strftime("%Y%m%d%H") + ADMIN_SALT).hexdigest()
     else:
         digest = hashlib.sha512(request.account + request.login + SALT).hexdigest()
@@ -216,18 +220,28 @@ def check_auth(request):
     return False
 
 
-def set_attribute(obj, request):
-    for attr in dir(obj):
+def set_attribute(declarative_class, request):
+    for attr in dir(declarative_class):
         if not attr.startswith('__'):
-            setattr(obj, attr, request['body'][attr])
+            setattr(declarative_class, attr, request['body'].get(attr, None))
+    return declarative_class
 
 
 def method_handler(request, ctx, store):
     try:
-        set_attribute(MethodRequest, request)
-        check_auth(MethodRequest)
-    except (ValueError, AttributeError) as err:
-        logging.exception('Attribute validation error: %s, context: %s' % (err.message, ctx["request_id"]))
+        method_request = set_attribute(MethodRequest, request)
+        if not check_auth(method_request):
+            logging.error('{} User authentication error'.format(ctx["request_id"]))
+            response, code = ERRORS[FORBIDDEN], FORBIDDEN
+        else:
+            called_method = MainHTTPHandler.__dict__[method_request.method]
+            if method_request.is_admin and called_method.__name__ == 'online_score':
+                response = '42'
+            else:
+                response = called_method(store=store, **request)
+            code = OK
+    except AttributeError as err:
+        logging.exception('{} {}'.format(ctx["request_id"], err.message))
         response, code = err.message ,INVALID_REQUEST
 
     return response, code
@@ -235,11 +249,30 @@ def method_handler(request, ctx, store):
 
 class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
-        "method": method_handler,
-        "online_score": get_score,
-        "clients_interests": get_interests
+        "method": method_handler
     }
-    store = None
+    store = Store()
+
+    @staticmethod
+    def online_score(**kwargs):
+        request = set_attribute(OnlineScoreRequest, kwargs)
+        #OnlineScoreRequest.phone = kwargs.get('phone', None)
+        #OnlineScoreRequest.email = kwargs.get('email', None)
+        #OnlineScoreRequest.first_name = kwargs.get('first_name', None)
+        #OnlineScoreRequest.last_name = kwargs.get('last_name', None)
+        #OnlineScoreRequest.birthday = kwargs.get('birthday', None)
+        #OnlineScoreRequest.gender = kwargs.get('gender', None)
+        return get_score(kwargs['store'], request.phone, request.email,
+                         request.birthday, request.gender,
+                         request.first_name, request.last_name)
+
+    @staticmethod
+    def clients_interests(**kwargs):
+        request = set_attribute(ClientsInterestsRequest, kwargs)
+        #ClientsInterestsRequest.client_ids = kwargs.get('client_ids', None)
+        #ClientsInterestsRequest.date = kwargs.get('date', None)
+        return get_interests(kwargs['store'], request.client_ids)
+
 
     def get_request_id(self, headers):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
