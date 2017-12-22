@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import abc
 import json
 import uuid
 import logging
@@ -51,7 +50,6 @@ class DeclarativeMeta(type):
                 cls.__dict__[attr].value = value
         except KeyError:
             pass
-            #raise AttributeError('{}: not expected attribute <{}>'.format(cls.__name__, attr))
 
 
 class FieldBase(object):
@@ -59,13 +57,17 @@ class FieldBase(object):
     def __init__(self, required, nullable):
         self.required = required
         self.nullable = nullable
+        self.instance = str
 
     def validate(self, value):
-        if self.required and value is None:
-            return AttributeError('{}: attribute <{}> is required')
-        if not (value or self.nullable):
-            return AttributeError('{}: attribute <{}> is not nullable')
-        return True
+        result = False
+        if isinstance(value, self.instance):
+            if self.required and value is None:
+                return AttributeError('{}: attribute <{}> is required')
+            if not (value or self.nullable):
+                return AttributeError('{}: attribute <{}> is not nullable')
+            result = True
+        return result
 
     def __get__(self, instance, owner):
         if hasattr(self, 'value'):
@@ -174,7 +176,7 @@ class ClientIDsField(FieldBase):
     def validate(self, value):
 
         result = super(ClientIDsField, self).validate(value)
-        if not isinstance(result, AttributeError):
+        if result == True and not isinstance(result, AttributeError):
             func = self._partial_isinstance(isinstance, int)
             if not all(map(func, value)):
                 return self._error_message(value)
@@ -256,12 +258,6 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     @staticmethod
     def online_score(**kwargs):
         request = set_attribute(OnlineScoreRequest, kwargs)
-        #OnlineScoreRequest.phone = kwargs.get('phone', None)
-        #OnlineScoreRequest.email = kwargs.get('email', None)
-        #OnlineScoreRequest.first_name = kwargs.get('first_name', None)
-        #OnlineScoreRequest.last_name = kwargs.get('last_name', None)
-        #OnlineScoreRequest.birthday = kwargs.get('birthday', None)
-        #OnlineScoreRequest.gender = kwargs.get('gender', None)
         return get_score(kwargs['store'], request.phone, request.email,
                          request.birthday, request.gender,
                          request.first_name, request.last_name)
@@ -269,8 +265,6 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     @staticmethod
     def clients_interests(**kwargs):
         request = set_attribute(ClientsInterestsRequest, kwargs)
-        #ClientsInterestsRequest.client_ids = kwargs.get('client_ids', None)
-        #ClientsInterestsRequest.date = kwargs.get('date', None)
         return get_interests(kwargs['store'], request.client_ids)
 
 
@@ -311,7 +305,11 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(r))
         return
 
+
 if __name__ == "__main__":
+    field = ClientIDsField(required=True)
+    field.validate(-1)
+
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
     op.add_option("-l", "--log", action="store", default=None)
