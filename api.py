@@ -43,7 +43,10 @@ class DeclarativeMeta(type):
 
     def __setattr__(cls, attr, value):
         try:
-            result = cls.__dict__[attr].validate(value)
+            result = None
+            attribute = cls.__dict__[attr]
+            if hasattr(attribute, 'validate'):
+                result = attribute.validate(value)
             if isinstance(result, AttributeError):
                 raise AttributeError(result.message.format(cls.__name__, attr))
             elif result:
@@ -57,17 +60,13 @@ class FieldBase(object):
     def __init__(self, required, nullable):
         self.required = required
         self.nullable = nullable
-        self.instance = str
 
     def validate(self, value):
-        result = False
-        if isinstance(value, self.instance):
-            if self.required and value is None:
-                return AttributeError('{}: attribute <{}> is required')
-            if not (value or self.nullable):
-                return AttributeError('{}: attribute <{}> is not nullable')
-            result = True
-        return result
+        if self.required and value is None:
+            return AttributeError('{}: attribute <{}> is required')
+        if not (value or self.nullable) and isinstance(value, self.instance):
+            return AttributeError('{}: attribute <{}> is not nullable')
+        return self._error_message(value) if not isinstance(value, self.instance) else True
 
     def __get__(self, instance, owner):
         if hasattr(self, 'value'):
@@ -81,26 +80,28 @@ class FieldBase(object):
 class CharField(FieldBase):
 
     def __init__(self, required, nullable):
+        self.instance = str
         super(CharField, self).__init__(required, nullable)
-
-    def validate(self, value):
-        return super(CharField, self).validate(value)
 
 
 class ArgumentsField(FieldBase):
-    def __init__(self, required, nullable, _type=dict):
+    def __init__(self, required, nullable):
+        self.instance = dict
         super(ArgumentsField, self).__init__(required, nullable)
 
 
 class EmailField(CharField):
-    def __init__(self, required, nullable, _type=str):
+    def __init__(self, required, nullable):
         super(EmailField, self).__init__(required, nullable)
 
     def validate(self, value):
-        if '@' in value:
-            return super(CharField, self).validate(value)
-        else:
+        result = super(CharField, self).validate(value)
+        try:
+            if result is True:
+                result = '@' in value
+        except TypeError:
             return self._error_message(value)
+        return result
 
 
 class PhoneField(FieldBase):
@@ -109,8 +110,8 @@ class PhoneField(FieldBase):
         super(PhoneField, self).__init__(required, nullable)
 
     def validate(self, value):
-        value = str(value)
-        if len(value) == 11 and value[0] == '7':
+        string_value = str(value)
+        if len(string_value) == 11 and string_value[0] == '7':
             return super(PhoneField, self).validate(value)
         else:
             return self._error_message(value)
@@ -119,16 +120,28 @@ class PhoneField(FieldBase):
 class DateField(FieldBase):
 
     def __init__(self, required, nullable):
+        self.instance = datetime.datetime
         super(DateField, self).__init__(required, nullable)
 
+    def str_to_date(self, value):
+        if hasattr(value, 'split'):
+            value = value.split('.')
+            value.reverse()
+            try:
+                if len(value[0]) < 4:
+                    raise ValueError
+                value = self.instance(*map(int, value))
+            except (TypeError, ValueError):
+                return False
+        return value
+
     def validate(self, value):
-        result = super(DateField, self).validate(value)
-        if isinstance(result, AttributeError):
-            return result
-        date = value.split('.')
-        date.reverse()
-        date = datetime.datetime(*map(int, date))
-        return date
+        date = self.str_to_date(value)
+        if date:
+            result = super(DateField, self).validate(date)
+        else:
+            result = self._error_message(value)
+        return result
 
 
 class BirthDayField(DateField):
@@ -138,11 +151,9 @@ class BirthDayField(DateField):
 
     def validate(self, value):
         result = super(BirthDayField, self).validate(value)
-        if isinstance(result, datetime.datetime):
-            delta = datetime.datetime.now() - result
-            if delta.days // 365 < 70:
-                return True
-            else:
+        if result is True and not isinstance(result, AttributeError):
+            delta = datetime.datetime.now() - self.str_to_date(value)
+            if not 0 < delta.days // 365 < 70:
                 return self._error_message(value)
         return result
 
@@ -150,14 +161,14 @@ class BirthDayField(DateField):
 class GenderField(FieldBase):
 
     def __init__(self, required, nullable):
+        self.instance = int
         super(GenderField, self).__init__(required, nullable)
 
     def validate(self, value):
         try:
-            result = int(value)
-            if result not in {0, 1, 2}:
+            if value not in {0, 1, 2}:
                 raise ValueError
-        except ValueError:
+        except (ValueError, TypeError):
             return self._error_message(value)
         return super(GenderField, self).validate(value)
 
@@ -165,20 +176,18 @@ class GenderField(FieldBase):
 class ClientIDsField(FieldBase):
 
     def __init__(self, required, nullable=False):
+        self.instance = list
         super(ClientIDsField, self).__init__(required, nullable)
 
     @staticmethod
-    def _partial_isinstance(func, cls):
-        def wrapper(x):
-            return func(x, cls)
-        return wrapper
+    def is_valid_id(value):
+        return value > 0 if isinstance(value, int) else False
 
     def validate(self, value):
 
         result = super(ClientIDsField, self).validate(value)
         if result == True and not isinstance(result, AttributeError):
-            func = self._partial_isinstance(isinstance, int)
-            if not all(map(func, value)):
+            if not all(map(self.is_valid_id, value)):
                 return self._error_message(value)
         return result
 
@@ -308,7 +317,14 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     field = ClientIDsField(required=True)
-    field.validate(-1)
+    field.validate('')
+    field = DateField(required=False, nullable=True)
+    field.validate('01.01.1917')
+    method_handler({"body": {}, "headers": {}}, {'request_id': 0}, Store())
+    field = GenderField(required=False, nullable=True)
+    obj_exc = field.validate(0)
+    field = ClientIDsField(required=True)
+    obj_exc = field.validate([1.0, 2.0, 3.0])
 
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
