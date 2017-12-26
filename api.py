@@ -37,6 +37,7 @@ GENDERS = {
     MALE: "male",
     FEMALE: "female",
 }
+STR_TYPE = unicode if hasattr(__builtins__, 'unicode') else str
 
 
 class DeclarativeMeta(type):
@@ -80,7 +81,7 @@ class FieldBase(object):
 class CharField(FieldBase):
 
     def __init__(self, required, nullable):
-        self.instance = str
+        self.instance = STR_TYPE
         super(CharField, self).__init__(required, nullable)
 
 
@@ -96,25 +97,29 @@ class EmailField(CharField):
 
     def validate(self, value):
         result = super(CharField, self).validate(value)
-        try:
-            if result is True:
-                result = '@' in value
-        except TypeError:
-            return self._error_message(value)
+        if result is True:
+            result = result if '@' in value else self._error_message(value)
         return result
 
 
 class PhoneField(FieldBase):
 
     def __init__(self, required, nullable):
+        self.instance = STR_TYPE
         super(PhoneField, self).__init__(required, nullable)
 
     def validate(self, value):
-        string_value = str(value)
-        if len(string_value) == 11 and string_value[0] == '7':
-            return super(PhoneField, self).validate(value)
+        result = self._error_message(value)
+        try:
+            if value:
+                int(value)
+        except ValueError:
+            pass
         else:
-            return self._error_message(value)
+            result = super(PhoneField, self).validate(value)
+            if result is True and len(value) == 11 and value[0] == '7':
+                return result
+        return result
 
 
 class DateField(FieldBase):
@@ -124,21 +129,22 @@ class DateField(FieldBase):
         super(DateField, self).__init__(required, nullable)
 
     def str_to_date(self, value):
+        result = False
         if hasattr(value, 'split'):
             value = value.split('.')
             value.reverse()
             try:
                 if len(value[0]) < 4:
                     raise ValueError
-                value = self.instance(*map(int, value))
+                result = self.instance(*map(int, value))
             except (TypeError, ValueError):
                 return False
-        return value
+        return result
 
     def validate(self, value):
         date = self.str_to_date(value)
-        if date:
-            result = super(DateField, self).validate(date)
+        if date and super(DateField, self).validate(date):
+            result = date
         else:
             result = self._error_message(value)
         return result
@@ -151,8 +157,8 @@ class BirthDayField(DateField):
 
     def validate(self, value):
         result = super(BirthDayField, self).validate(value)
-        if result is True and not isinstance(result, AttributeError):
-            delta = datetime.datetime.now() - self.str_to_date(value)
+        if not isinstance(result, AttributeError):
+            delta = datetime.datetime.now() - result
             if not 0 < delta.days // 365 < 70:
                 return self._error_message(value)
         return result
@@ -222,7 +228,7 @@ class MethodRequest(object):
 
 
 def check_auth(request):
-    if request.is_admin:
+    if request().is_admin:
         digest = hashlib.sha512(datetime.datetime.now().strftime("%Y%m%d%H") + ADMIN_SALT).hexdigest()
     else:
         digest = hashlib.sha512(request.account + request.login + SALT).hexdigest()
@@ -233,23 +239,30 @@ def check_auth(request):
 
 def set_attribute(declarative_class, request):
     for attr in dir(declarative_class):
-        if not attr.startswith('__'):
-            setattr(declarative_class, attr, request['body'].get(attr, None))
+        if not attr.startswith('__') and not hasattr(getattr(declarative_class, attr), 'getter'):
+            setattr(declarative_class, attr, request.get(attr, None))
     return declarative_class
 
 
 def method_handler(request, ctx, store):
     try:
-        method_request = set_attribute(MethodRequest, request)
+        method_request = set_attribute(MethodRequest, request['body'])
         if not check_auth(method_request):
             logging.error('{} User authentication error'.format(ctx["request_id"]))
             response, code = ERRORS[FORBIDDEN], FORBIDDEN
         else:
-            called_method = MainHTTPHandler.__dict__[method_request.method]
-            if method_request.is_admin and called_method.__name__ == 'online_score':
+            called_method = getattr(MainHTTPHandler, method_request.method)
+            if method_request.method == 'online_score':
+                ctx['has'] = [
+                    attr for attr in dir(method_request) if not (attr.startswith('__') or hasattr(
+                        getattr(method_request, attr), 'getter') or getattr(method_request, attr) is None)
+                ]
+            else:
+                ctx['nclients'] = len(method_request.arguments['client_ids'])
+            if method_request().is_admin:
                 response = '42'
             else:
-                response = called_method(store=store, **request)
+                response = called_method(store=store, **request['body']['arguments'])
             code = OK
     except AttributeError as err:
         logging.exception('{} {}'.format(ctx["request_id"], err.message))
@@ -319,12 +332,27 @@ if __name__ == "__main__":
     field = ClientIDsField(required=True)
     field.validate('')
     field = DateField(required=False, nullable=True)
-    field.validate('01.01.1917')
-    method_handler({"body": {}, "headers": {}}, {'request_id': 0}, Store())
+    obj_exc = field.validate(12122017)
+    #method_handler({"body": {}, "headers": {}}, {'request_id': 0}, Store())
     field = GenderField(required=False, nullable=True)
     obj_exc = field.validate(0)
     field = ClientIDsField(required=True)
     obj_exc = field.validate([1.0, 2.0, 3.0])
+    field = EmailField(required=False, nullable=True)
+    obj_exc = field.validate('0')
+    attr = PhoneField(required=False, nullable=True)
+    res = attr.validate(None)
+    request = json.loads(
+        u"""
+        {"account": "horns&hoofs", "login": "h&f", "method": "online_score",
+        "token": "55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af34e14e1d5bcd5a08f21fc95",
+        "arguments": {"phone": "79175002040", "email": "stupnikov@otus.ru", "first_name": "Стансилав",
+                      "last_name": "Ступников", "birthday": "01.01.1990", "gender": 1}}""".encode('utf8')
+    )
+    method_handler({
+        "body": request,
+        "headers": "Content-Type: application/json"}, {'request_id': 123}, Store()
+    )
 
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
