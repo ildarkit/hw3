@@ -1,13 +1,16 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import hashlib
 
 
 def get_score(store, phone, email, birthday=None, gender=None, first_name=None, last_name=None):
     key_parts = [
-        first_name or "",
-        last_name or "",
-        birthday.strftime("%Y%m%d"),
+        first_name.encode('utf8') or "",
+        last_name.encode('utf8') or "",
+        birthday.strftime("%Y%m%d").encode('utf8'),
     ]
-    key = "uid:" + hashlib.md5("".join(key_parts)).hexdigest()
+    key = "uid:" + hashlib.md5(''.join(key_parts)).hexdigest()
     # try get from cache,
     # fallback to heavy calculation in case of cache miss
     score = store.cache_get(key) or 0
@@ -24,6 +27,7 @@ def get_score(store, phone, email, birthday=None, gender=None, first_name=None, 
     # cache for 60 minutes
     store.cache_set(key, score,  60 * 60)
     return score
+
 
 def get_interests(store, cid):
     r = store.get("i:%s" % cid)

@@ -38,6 +38,7 @@ GENDERS = {
     FEMALE: "female",
 }
 STR_TYPE = unicode if hasattr(__builtins__, 'unicode') else str
+NOT_EMPTY_PAIRS_ATTR = (('phone', 'email'), ('first_name', 'last_name'), ('birthday', 'gender'))
 
 
 class DeclarativeMeta(type):
@@ -109,17 +110,16 @@ class PhoneField(FieldBase):
         super(PhoneField, self).__init__(required, nullable)
 
     def validate(self, value):
-        result = self._error_message(value)
         try:
             if value:
                 int(value)
         except ValueError:
-            pass
+            return self._error_message(value)
         else:
             result = super(PhoneField, self).validate(value)
-            if result is True and len(value) == 11 and value[0] == '7':
-                return result
-        return result
+            if result is True and not (len(value) == 11 and value[0] == '7'):
+                result = self._error_message(value)
+            return result
 
 
 class DateField(FieldBase):
@@ -143,10 +143,9 @@ class DateField(FieldBase):
 
     def validate(self, value):
         date = self.str_to_date(value)
-        if date and super(DateField, self).validate(date):
-            result = date
-        else:
-            result = self._error_message(value)
+        result = super(DateField, self).validate(date)
+        if not isinstance(result, AttributeError):
+            result = date if date else self._error_message(value)
         return result
 
 
@@ -244,6 +243,15 @@ def set_attribute(declarative_class, request):
     return declarative_class
 
 
+def is_blank_pair_attr(request):
+    result = True
+    for pair_attr in NOT_EMPTY_PAIRS_ATTR:
+        if len([attr for attr in pair_attr if getattr(request, attr)]) == len(pair_attr):
+            result = False
+            break
+    return result
+
+
 def method_handler(request, ctx, store):
     try:
         method_request = set_attribute(MethodRequest, request['body'])
@@ -257,12 +265,19 @@ def method_handler(request, ctx, store):
                     attr for attr in dir(method_request) if not (attr.startswith('__') or hasattr(
                         getattr(method_request, attr), 'getter') or getattr(method_request, attr) is None)
                 ]
+                if is_blank_pair_attr(method_request):
+                    raise AttributeError(
+                        'there are empty values ​​in all attribute groups {}'.format(', '.join(NOT_EMPTY_PAIRS_ATTR))
+                    )
+                result = {'score': '0'}
             else:
                 ctx['nclients'] = len(method_request.arguments['client_ids'])
+                result = {'score': '0'}
             if method_request().is_admin:
                 response = '42'
             else:
-                response = called_method(store=store, **request['body']['arguments'])
+                result[result.keys()[0]] = str(called_method(store=store, **request['body']['arguments']))
+                response = result
             code = OK
     except AttributeError as err:
         logging.exception('{} {}'.format(ctx["request_id"], err.message))
@@ -280,14 +295,21 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     @staticmethod
     def online_score(**kwargs):
         request = set_attribute(OnlineScoreRequest, kwargs)
+        if request.birthday is not None:
+            birthday = DateField(None, None).str_to_date(request.birthday)
+        else:
+            birthday = request.birthday
         return get_score(kwargs['store'], request.phone, request.email,
-                         request.birthday, request.gender,
+                         birthday, request.gender,
                          request.first_name, request.last_name)
 
     @staticmethod
     def clients_interests(**kwargs):
         request = set_attribute(ClientsInterestsRequest, kwargs)
         return get_interests(kwargs['store'], request.client_ids)
+
+    def is_none(self, *args):
+        return [x for x in args if x is None]
 
 
     def get_request_id(self, headers):
@@ -341,7 +363,7 @@ if __name__ == "__main__":
     field = EmailField(required=False, nullable=True)
     obj_exc = field.validate('0')
     attr = PhoneField(required=False, nullable=True)
-    res = attr.validate(None)
+    res = attr.validate(u'790000323732')
     request = json.loads(
         u"""
         {"account": "horns&hoofs", "login": "h&f", "method": "online_score",
