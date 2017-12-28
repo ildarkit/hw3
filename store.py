@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import json
 import redis
 
@@ -10,9 +13,8 @@ class Store:
         self.connect_timeout = connect_timeout
         self.attempts = attempts
         self.i = 0
-        self._try_connect()
 
-    def _try_connect(self):
+    def connect(self):
         try:
             self.redis = redis.Redis(host=self.host, port=self.port,
                                      socket_timeout=self.timeout, socket_connect_timeout=self.connect_timeout
@@ -20,7 +22,7 @@ class Store:
         except (redis.ConnectionError, redis.TimeoutError):
             self.i += 1
             if self.i <= self.attempts:
-                self._try_connect()
+                self.connect()
             else:
                 raise
 

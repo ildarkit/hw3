@@ -38,7 +38,7 @@ GENDERS = {
     FEMALE: "female",
 }
 STR_TYPE = unicode if hasattr(__builtins__, 'unicode') else str
-NOT_EMPTY_PAIRS_ATTR = (('phone', 'email'), ('first_name', 'last_name'), ('birthday', 'gender'))
+NOT_EMPTY_GROUP_ATTR = (('phone', 'email'), ('first_name', 'last_name'), ('birthday', 'gender'))
 
 
 class DeclarativeMeta(type):
@@ -139,7 +139,7 @@ class DateField(FieldBase):
                 result = self.instance(*map(int, value))
             except (TypeError, ValueError):
                 return False
-        return result
+        return value if value is None else result
 
     def validate(self, value):
         date = self.str_to_date(value)
@@ -191,7 +191,7 @@ class ClientIDsField(FieldBase):
     def validate(self, value):
 
         result = super(ClientIDsField, self).validate(value)
-        if result == True and not isinstance(result, AttributeError):
+        if result is True and not isinstance(result, AttributeError):
             if not all(map(self.is_valid_id, value)):
                 return self._error_message(value)
         return result
@@ -243,17 +243,18 @@ def set_attribute(declarative_class, request):
     return declarative_class
 
 
-def is_blank_pair_attr(request):
+def is_blank_group_attr(arguments):
     result = True
-    for pair_attr in NOT_EMPTY_PAIRS_ATTR:
-        if len([attr for attr in pair_attr if getattr(request, attr)]) == len(pair_attr):
+    for group_attr in NOT_EMPTY_GROUP_ATTR:
+        if len([attr for attr in group_attr if arguments.get(attr, '')]) == len(group_attr):
             result = False
             break
     return result
 
 
-def method_handler(request, ctx, store):
+def method_handler(request, ctx):
     try:
+        response = ''
         method_request = set_attribute(MethodRequest, request['body'])
         if not check_auth(method_request):
             logging.error('{} User authentication error'.format(ctx["request_id"]))
@@ -265,19 +266,19 @@ def method_handler(request, ctx, store):
                     attr for attr in dir(method_request) if not (attr.startswith('__') or hasattr(
                         getattr(method_request, attr), 'getter') or getattr(method_request, attr) is None)
                 ]
-                if is_blank_pair_attr(method_request):
+                if is_blank_group_attr(method_request.arguments):
                     raise AttributeError(
-                        'there are empty values ​​in all attribute groups {}'.format(', '.join(NOT_EMPTY_PAIRS_ATTR))
+                        'there are empty values ​​in all attribute groups {}'.format(
+                            ', '.join(map(repr, NOT_EMPTY_GROUP_ATTR))
+                        )
                     )
-                result = {'score': '0'}
+                if method_request().is_admin:
+                    response = {'score': 42}
             else:
-                ctx['nclients'] = len(method_request.arguments['client_ids'])
-                result = {'score': '0'}
-            if method_request().is_admin:
-                response = '42'
-            else:
-                result[result.keys()[0]] = str(called_method(store=store, **request['body']['arguments']))
-                response = result
+                clients_ids = set(method_request.arguments['client_ids'])
+                ctx['nclients'] = len(clients_ids)
+            if not response:
+                response = str(called_method(MainHTTPHandler, **request['body']['arguments']))
             code = OK
     except AttributeError as err:
         logging.exception('{} {}'.format(ctx["request_id"], err.message))
@@ -291,26 +292,29 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         "method": method_handler
     }
     store = Store()
+    store.connect()
+
 
     @staticmethod
-    def online_score(**kwargs):
+    def online_score(cls, **kwargs):
         request = set_attribute(OnlineScoreRequest, kwargs)
-        if request.birthday is not None:
-            birthday = DateField(None, None).str_to_date(request.birthday)
-        else:
-            birthday = request.birthday
-        return get_score(kwargs['store'], request.phone, request.email,
-                         birthday, request.gender,
-                         request.first_name, request.last_name)
+        birthday = DateField(None, None).str_to_date(request.birthday)
+        result = dict()
+        result['score'] = get_score(cls.store, request.phone, request.email,
+                                    birthday, request.gender,
+                                    request.first_name, request.last_name)
+        return result
 
     @staticmethod
-    def clients_interests(**kwargs):
+    def clients_interests(cls, **kwargs):
         request = set_attribute(ClientsInterestsRequest, kwargs)
-        return get_interests(kwargs['store'], request.client_ids)
+        result = {}
+        for cid in request.client_ids:
+            result[cid] = get_interests(cls.store, cid)
+        return result
 
     def is_none(self, *args):
         return [x for x in args if x is None]
-
 
     def get_request_id(self, headers):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
@@ -322,15 +326,16 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         try:
             data_string = self.rfile.read(int(self.headers['Content-Length']))
             request = json.loads(data_string)
-        except:
+        except Exception:
             code = BAD_REQUEST
 
         if request:
-            path = self.path.strip("/")[-2]
+            logging.info(self.path)
+            path = self.path.strip("/")
             logging.info("%s: %s %s" % (self.path, data_string, context["request_id"]))
             if path in self.router:
                 try:
-                    response, code = self.router[path]({"body": request, "headers": self.headers}, context, self.store)
+                    response, code = self.router[path]({"body": request, "headers": self.headers}, context)
                 except Exception, e:
                     logging.exception("Unexpected error: %s" % e)
                     code = INTERNAL_ERROR
@@ -351,31 +356,6 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    field = ClientIDsField(required=True)
-    field.validate('')
-    field = DateField(required=False, nullable=True)
-    obj_exc = field.validate(12122017)
-    #method_handler({"body": {}, "headers": {}}, {'request_id': 0}, Store())
-    field = GenderField(required=False, nullable=True)
-    obj_exc = field.validate(0)
-    field = ClientIDsField(required=True)
-    obj_exc = field.validate([1.0, 2.0, 3.0])
-    field = EmailField(required=False, nullable=True)
-    obj_exc = field.validate('0')
-    attr = PhoneField(required=False, nullable=True)
-    res = attr.validate(u'790000323732')
-    request = json.loads(
-        u"""
-        {"account": "horns&hoofs", "login": "h&f", "method": "online_score",
-        "token": "55cc9ce545bcd144300fe9efc28e65d415b923ebb6be1e19d2750a2c03e80dd209a27954dca045e5bb12418e7d89b6d718a9e35af34e14e1d5bcd5a08f21fc95",
-        "arguments": {"phone": "79175002040", "email": "stupnikov@otus.ru", "first_name": "Стансилав",
-                      "last_name": "Ступников", "birthday": "01.01.1990", "gender": 1}}""".encode('utf8')
-    )
-    method_handler({
-        "body": request,
-        "headers": "Content-Type: application/json"}, {'request_id': 123}, Store()
-    )
-
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
     op.add_option("-l", "--log", action="store", default=None)
