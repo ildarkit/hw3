@@ -278,7 +278,7 @@ def method_handler(request, ctx):
                 clients_ids = set(method_request.arguments['client_ids'])
                 ctx['nclients'] = len(clients_ids)
             if not response:
-                response = str(called_method(MainHTTPHandler, **request['body']['arguments']))
+                response = json.dumps(called_method(MainHTTPHandler, **request['body']['arguments']))
             code = OK
     except AttributeError as err:
         logging.exception('{} {}'.format(ctx["request_id"], err.message))
@@ -325,7 +325,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         request = None
         try:
             data_string = self.rfile.read(int(self.headers['Content-Length']))
-            request = json.loads(data_string)
+            request = json.loads(data_string, encoding='utf-8')
         except Exception:
             code = BAD_REQUEST
 

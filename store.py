@@ -2,29 +2,36 @@
 # -*- coding: utf-8 -*-
 
 import json
+import time
 import redis
 
 
 class Store:
-    def __init__(self, host='localhost', port=6379, timeout=3, connect_timeout=20, attempts=3):
+    def __init__(self, host='localhost', port=6379, timeout=3, connect_timeout=20, connect_delay=1, attempts=3):
         self.host = host
         self.port = port
         self.timeout = timeout
         self.connect_timeout = connect_timeout
+        self.connect_delay = connect_delay
         self.attempts = attempts
         self.i = 0
+        self.redis = redis.Redis(host=self.host, port=self.port, db=0,
+                                 socket_timeout=self.timeout,
+                                 socket_connect_timeout=self.connect_timeout)
 
-    def connect(self):
-        try:
-            self.redis = redis.Redis(host=self.host, port=self.port,
-                                     socket_timeout=self.timeout, socket_connect_timeout=self.connect_timeout
-                                     )
-        except (redis.ConnectionError, redis.TimeoutError):
-            self.i += 1
-            if self.i <= self.attempts:
-                self.connect()
+    def connect(self, command=None, *args):
+        for i in range(self.attempts):
+            try:
+                if command is None:
+                    self.redis.ping()
+                else:
+                    return command(*args)
+            except (redis.ConnectionError, redis.TimeoutError):
+                time.sleep(self.connect_delay)
+                if i == self.attempts - 1:
+                    raise
             else:
-                raise
+                break
 
     @staticmethod
     def _exec_command(command, *args, **kwargs):
@@ -42,7 +49,7 @@ class Store:
         return self._exec_command(self.redis.set, key, value, ex=expire)
 
     def get(self, key):
-        response = self.redis.get(key)
+        response = self.connect(self.redis.get, key)
         if not response is None:
             response = json.loads(response)
         return response
