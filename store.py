@@ -38,18 +38,21 @@ class Store:
         response = None
         try:
             response = command(*args, **kwargs)
-        except (redis.ConnectionError, redis.TimeoutError):
+            if response is not None:
+                response = json.loads(response)
+        except Exception:
             pass
         return response
 
     def cache_get(self, key):
-        return self._exec_command(self.get, key)
+        return self._exec_command(self.redis.get, key)
 
     def cache_set(self, key, value, expire):
         return self._exec_command(self.redis.set, key, value, ex=expire)
 
     def get(self, key):
         response = self.connect(self.redis.get, key)
-        if not response is None:
+        if response is not None:
             response = json.loads(response)
         return response
+

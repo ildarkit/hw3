@@ -9,9 +9,10 @@ class TestSuite(unittest.TestCase):
         self.context = {'request_id': 0}
         self.headers = {}
         self.store = Store()
+        #self.store.connect()
 
     def get_response(self, request):
-        return api.method_handler({"body": request, "headers": self.headers}, self.context, self.store)
+        return api.method_handler({"body": request, "headers": self.headers}, self.context)
 
     def test_empty_request(self):
         _, code = self.get_response({})
@@ -208,6 +209,49 @@ class TestSuite(unittest.TestCase):
         attr = api.CharField(required=True, nullable=False)
         obj_exc = attr.validate('')
         self.assertIsInstance(obj_exc, AttributeError)
+
+    def test_on_disconnected_store_cache_set_cache_get(self):
+
+        self.store = Store(port=9000, connect_timeout=1)
+
+        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
+        self.store.cache_set(key, -1, 60)
+        value = self.store.cache_get(key) or 0
+        self.assertEqual(value, 0)
+
+        self.store.cache_set(key, 0, 60)
+        value = self.store.cache_get(key) or 1
+        self.assertEqual(value, 1)
+
+    def test_on_connected_store_cache_set_cache_get(self):
+
+        self.store = Store()
+
+        key = "uid:123"
+        self.store.cache_set(key, 9999, 1)
+        value = self.store.cache_get(key) or 0
+        self.assertEqual(value, 9999)
+
+        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
+        self.store.cache_set(key, 1, 60 * 60)
+        value = self.store.cache_get(key) or -1
+        self.assertEqual(value, 1)
+
+    def test_on_connected_store_cache_get(self):
+
+        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
+        value = self.store.cache_get(key) or -1
+        self.assertEqual(value, 1)
+
+        key = "uid:123"
+        value = self.store.cache_get(key) or -1
+        self.assertEqual(value, -1)
+
+    def test_on_connected_store_get(self):
+
+        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
+        value = self.store.get(key)
+        self.assertEqual(value, 1)
 
 
 if __name__ == "__main__":
