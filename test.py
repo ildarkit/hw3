@@ -1,7 +1,19 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import unittest
 
 import api
 from store import Store
+
+
+def cases(test_cases):
+    def decorator(method):
+        def wrapper(self):
+            for test in test_cases:
+                method(self, test)
+        return wrapper
+    return decorator
 
 
 class TestSuite(unittest.TestCase):
@@ -225,8 +237,6 @@ class TestSuite(unittest.TestCase):
 
     def test_on_connected_store_cache_set_cache_get(self):
 
-        self.store = Store()
-
         key = "uid:123"
         self.store.cache_set(key, 9999, 1)
         value = self.store.cache_get(key) or 0
@@ -252,6 +262,16 @@ class TestSuite(unittest.TestCase):
         key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
         value = self.store.get(key)
         self.assertEqual(value, 1)
+
+    @cases([{"account": "horns&hoofs", "login": "h&f", "method": "online_score", "token": "", "arguments": {}},
+            {"account": "ой", "login": "h&f", "method": "online_score", "token": "sdd", "arguments": {}},
+            {"account": "horns&hoofs", "login": "admin", "method": "online_score", "token": "ой", "arguments": {}},
+            {"account": "", "login": "admin", "method": "online_score", "token": "", "arguments": {}},
+            {"account": "horns&hoofs", "login": "admin", "method": "online_score", "token": "", "arguments": {}},
+            {"account": "horns&hoofs", "login": "ой", "method": "online_score", "token": "", "arguments": {}}])
+    def test_bad_auth(self, request):
+        request = api.set_attributes(api.MethodRequest, request)
+        self.assertFalse(api.check_auth(request))
 
 
 if __name__ == "__main__":

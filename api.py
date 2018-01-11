@@ -37,8 +37,14 @@ GENDERS = {
     MALE: "male",
     FEMALE: "female",
 }
-STR_TYPE = unicode if hasattr(__builtins__, 'unicode') else str
+try:
+    STR_TYPE = basestring
+    PYTHON2 = True
+except NameError:
+    STR_TYPE = str
+    PYTHON2 = False
 NOT_EMPTY_GROUP_ATTR = (('phone', 'email'), ('first_name', 'last_name'), ('birthday', 'gender'))
+VALIDATION_ERROR_MESSAGE = False
 
 
 class DeclarativeMeta(type):
@@ -64,18 +70,24 @@ class FieldBase(object):
         self.nullable = nullable
 
     def validate(self, value):
-        if self.required and value is None:
-            return AttributeError('{}: attribute <{}> is required')
-        if not (value or self.nullable) and isinstance(value, self.instance):
-            return AttributeError('{}: attribute <{}> is not nullable')
-        return self._error_message(value) if not isinstance(value, self.instance) else True
+        result = True
+        if value is None:
+            if self.required:
+                result = AttributeError('{}: attribute <{}> is required')
+        elif not (value or self.nullable) and isinstance(value, self.instance):
+            result = AttributeError('{}: attribute <{}> is not nullable')
+        elif not isinstance(value, self.instance):
+            result = AttributeError(
+                '{}: invalid type {} of value <{}> for attribute <{}>'.format('{}', type(value), value, '{}')
+            )
+        return result
 
     def __get__(self, instance, owner):
         if hasattr(self, 'value'):
             return self.value
 
     @staticmethod
-    def _error_message(value):
+    def _invalid_value(value):
         return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
 
 
@@ -99,7 +111,7 @@ class EmailField(CharField):
     def validate(self, value):
         result = super(CharField, self).validate(value)
         if result is True:
-            result = result if '@' in value else self._error_message(value)
+            result = result if '@' in value else self._invalid_value(value)
         return result
 
 
@@ -114,11 +126,11 @@ class PhoneField(FieldBase):
             if value:
                 int(value)
         except ValueError:
-            return self._error_message(value)
+            return self._invalid_value(value)
         else:
             result = super(PhoneField, self).validate(value)
             if result is True and not (len(value) == 11 and value[0] == '7'):
-                result = self._error_message(value)
+                result = self._invalid_value(value)
             return result
 
 
@@ -145,7 +157,7 @@ class DateField(FieldBase):
         date = self.str_to_date(value)
         result = super(DateField, self).validate(date)
         if not isinstance(result, AttributeError):
-            result = date if date else self._error_message(value)
+            result = date if date else self._invalid_value(value)
         return result
 
 
@@ -159,7 +171,7 @@ class BirthDayField(DateField):
         if not isinstance(result, AttributeError):
             delta = datetime.datetime.now() - result
             if not 0 < delta.days // 365 < 70:
-                return self._error_message(value)
+                return self._invalid_value(value)
         return result
 
 
@@ -174,7 +186,7 @@ class GenderField(FieldBase):
             if value not in {0, 1, 2}:
                 raise ValueError
         except (ValueError, TypeError):
-            return self._error_message(value)
+            return self._invalid_value(value)
         return super(GenderField, self).validate(value)
 
 
@@ -193,7 +205,7 @@ class ClientIDsField(FieldBase):
         result = super(ClientIDsField, self).validate(value)
         if result is True and not isinstance(result, AttributeError):
             if not all(map(self.is_valid_id, value)):
-                return self._error_message(value)
+                return self._invalid_value(value)
         return result
 
 
@@ -236,7 +248,7 @@ def check_auth(request):
     return False
 
 
-def set_attribute(declarative_class, request):
+def set_attributes(declarative_class, request):
     for attr in dir(declarative_class):
         if not attr.startswith('__') and not hasattr(getattr(declarative_class, attr), 'getter'):
             setattr(declarative_class, attr, request.get(attr, None))
@@ -255,7 +267,7 @@ def is_blank_group_attr(arguments):
 def method_handler(request, ctx):
     try:
         response = ''
-        method_request = set_attribute(MethodRequest, request['body'])
+        method_request = set_attributes(MethodRequest, request['body'])
         if not check_auth(method_request):
             logging.error('{} User authentication error'.format(ctx["request_id"]))
             response, code = ERRORS[FORBIDDEN], FORBIDDEN
@@ -281,7 +293,8 @@ def method_handler(request, ctx):
                 response = json.dumps(called_method(MainHTTPHandler, **request['body']['arguments']))
             code = OK
     except AttributeError as err:
-        logging.exception('{} {}'.format(ctx["request_id"], err.message))
+        if VALIDATION_ERROR_MESSAGE:
+            logging.error('{} {}'.format(ctx["request_id"], err.message))
         response, code = err.message ,INVALID_REQUEST
 
     return response, code
@@ -294,20 +307,27 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     store = Store()
     store.connect()
 
-
     @staticmethod
     def online_score(cls, **kwargs):
-        request = set_attribute(OnlineScoreRequest, kwargs)
+        request = set_attributes(OnlineScoreRequest, kwargs)
         birthday = DateField(None, None).str_to_date(request.birthday)
         result = dict()
+        if PYTHON2:
+            first_name = request.first_name.encode('utf-8')
+            last_name = request.last_name.encode('utf-8')
+            birthday = birthday.encode('utf-8')
+        else:
+            first_name = request.first_name
+            last_name = request.last_name
+
         result['score'] = get_score(cls.store, request.phone, request.email,
                                     birthday, request.gender,
-                                    request.first_name, request.last_name)
+                                    first_name, last_name)
         return result
 
     @staticmethod
     def clients_interests(cls, **kwargs):
-        request = set_attribute(ClientsInterestsRequest, kwargs)
+        request = set_attributes(ClientsInterestsRequest, kwargs)
         result = {}
         for cid in request.client_ids:
             result[cid] = get_interests(cls.store, cid)
@@ -356,6 +376,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    VALIDATION_ERROR_MESSAGE = True
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
     op.add_option("-l", "--log", action="store", default=None)

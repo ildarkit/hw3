@@ -6,9 +6,9 @@ import hashlib
 
 def get_score(store, phone, email, birthday=None, gender=None, first_name=None, last_name=None):
     key_parts = [
-        first_name.encode('utf8') or "",
-        last_name.encode('utf8') or "",
-        birthday.strftime("%Y%m%d").encode('utf8'),
+        first_name or "",
+        last_name or "",
+        birthday.strftime("%Y%m%d"),
     ]
     key = "uid:" + hashlib.md5(''.join(key_parts)).hexdigest()
     # try get from cache,
