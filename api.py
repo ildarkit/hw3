@@ -7,7 +7,7 @@ import logging
 import hashlib
 import datetime
 from optparse import OptionParser
-from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from store import Store
 from scoring import get_score
@@ -50,21 +50,21 @@ VALIDATION_ERROR_MESSAGE = False
 class DeclarativeMeta(type):
 
     def __setattr__(cls, attr, value):
+        result = None
         try:
-            result = None
             attribute = cls.__dict__[attr]
+        except KeyError:
+            pass
+        else:
             if hasattr(attribute, 'validate'):
                 result = attribute.validate(value)
             if isinstance(result, AttributeError):
                 raise AttributeError(result.message.format(cls.__name__, attr))
             elif result:
                 cls.__dict__[attr].value = value
-        except KeyError:
-            pass
 
 
 class FieldBase(object):
-
     def __init__(self, required, nullable):
         self.required = required
         self.nullable = nullable
@@ -92,7 +92,6 @@ class FieldBase(object):
 
 
 class CharField(FieldBase):
-
     def __init__(self, required, nullable):
         self.instance = STR_TYPE
         super(CharField, self).__init__(required, nullable)
@@ -116,7 +115,6 @@ class EmailField(CharField):
 
 
 class PhoneField(FieldBase):
-
     def __init__(self, required, nullable):
         self.instance = STR_TYPE
         super(PhoneField, self).__init__(required, nullable)
@@ -135,7 +133,6 @@ class PhoneField(FieldBase):
 
 
 class DateField(FieldBase):
-
     def __init__(self, required, nullable):
         self.instance = datetime.datetime
         super(DateField, self).__init__(required, nullable)
@@ -162,7 +159,6 @@ class DateField(FieldBase):
 
 
 class BirthDayField(DateField):
-
     def __init__(self, required, nullable):
         super(BirthDayField, self).__init__(required, nullable)
 
@@ -176,7 +172,6 @@ class BirthDayField(DateField):
 
 
 class GenderField(FieldBase):
-
     def __init__(self, required, nullable):
         self.instance = int
         super(GenderField, self).__init__(required, nullable)
@@ -191,7 +186,6 @@ class GenderField(FieldBase):
 
 
 class ClientIDsField(FieldBase):
-
     def __init__(self, required, nullable=False):
         self.instance = list
         super(ClientIDsField, self).__init__(required, nullable)
@@ -251,11 +245,12 @@ def check_auth(request):
 def set_attributes(declarative_class, request):
     for attr in dir(declarative_class):
         if not attr.startswith('__') and not hasattr(getattr(declarative_class, attr), 'getter'):
+            # setattr вызовет __setattr__ в метаклассе DeclarativeMeta
             setattr(declarative_class, attr, request.get(attr, None))
     return declarative_class
 
 
-def is_blank_group_attr(arguments):
+def is_empty_value_in_group_attr(arguments):
     result = True
     for group_attr in NOT_EMPTY_GROUP_ATTR:
         if len([attr for attr in group_attr if arguments.get(attr, '')]) == len(group_attr):
@@ -272,13 +267,15 @@ def method_handler(request, ctx):
             logging.error('{} User authentication error'.format(ctx["request_id"]))
             response, code = ERRORS[FORBIDDEN], FORBIDDEN
         else:
-            called_method = getattr(MainHTTPHandler, method_request.method)
+            requested_method = getattr(MainHTTPHandler, method_request.method)
             if method_request.method == 'online_score':
+                # в словаре контекста создаем список не пустых полей
                 ctx['has'] = [
                     attr for attr in dir(method_request) if not (attr.startswith('__') or hasattr(
                         getattr(method_request, attr), 'getter') or getattr(method_request, attr) is None)
                 ]
-                if is_blank_group_attr(method_request.arguments):
+                # хотя бы одна пара полей из NOT_EMPTY_GROUP_ATTR должна быть с не пустыми значениями
+                if is_empty_value_in_group_attr(method_request.arguments):
                     raise AttributeError(
                         'there are empty values ​​in all attribute groups {}'.format(
                             ', '.join(map(repr, NOT_EMPTY_GROUP_ATTR))
@@ -286,11 +283,15 @@ def method_handler(request, ctx):
                     )
                 if method_request().is_admin:
                     response = {'score': 42}
+            # method: clients_interests
             else:
+                # вычисление кол-ва переданных id клиентов
+                # и сохранение в словаре контекста
                 clients_ids = set(method_request.arguments['client_ids'])
                 ctx['nclients'] = len(clients_ids)
             if not response:
-                response = json.dumps(called_method(MainHTTPHandler, **request['body']['arguments']))
+                # вызов запрашиваемого метода из MainHTTPHandler
+                response = json.dumps(requested_method(MainHTTPHandler, **request['body']['arguments']))
             code = OK
     except AttributeError as err:
         if VALIDATION_ERROR_MESSAGE:
@@ -304,6 +305,9 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
         "method": method_handler
     }
+    # connect без параметров вызовет ping из redis.client,
+    # который в модуле redis.connection создаст сокет
+    # или использует уже созданный и выполнит connect
     store = Store()
     store.connect()
 
@@ -328,13 +332,10 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     @staticmethod
     def clients_interests(cls, **kwargs):
         request = set_attributes(ClientsInterestsRequest, kwargs)
-        result = {}
+        result = dict()
         for cid in request.client_ids:
             result[cid] = get_interests(cls.store, cid)
         return result
-
-    def is_none(self, *args):
-        return [x for x in args if x is None]
 
     def get_request_id(self, headers):
         return headers.get('HTTP_X_REQUEST_ID', uuid.uuid4().hex)
@@ -356,7 +357,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
             if path in self.router:
                 try:
                     response, code = self.router[path]({"body": request, "headers": self.headers}, context)
-                except Exception, e:
+                except Exception as e:
                     logging.exception("Unexpected error: %s" % e)
                     code = INTERNAL_ERROR
             else:

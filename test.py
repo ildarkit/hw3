@@ -12,7 +12,9 @@ def cases(test_cases):
         def wrapper(self):
             for test in test_cases:
                 method(self, test)
+
         return wrapper
+
     return decorator
 
 
@@ -21,7 +23,7 @@ class TestSuite(unittest.TestCase):
         self.context = {'request_id': 0}
         self.headers = {}
         self.store = Store()
-        #self.store.connect()
+        # self.store.connect()
 
     def get_response(self, request):
         return api.method_handler({"body": request, "headers": self.headers}, self.context)
@@ -223,7 +225,6 @@ class TestSuite(unittest.TestCase):
         self.assertIsInstance(obj_exc, AttributeError)
 
     def test_on_disconnected_store_cache_set_cache_get(self):
-
         self.store = Store(port=9000, connect_timeout=1)
 
         key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
@@ -236,7 +237,6 @@ class TestSuite(unittest.TestCase):
         self.assertEqual(value, 1)
 
     def test_on_connected_store_cache_set_cache_get(self):
-
         key = "uid:123"
         self.store.cache_set(key, 9999, 1)
         value = self.store.cache_get(key) or 0
@@ -248,17 +248,15 @@ class TestSuite(unittest.TestCase):
         self.assertEqual(value, 1)
 
     def test_on_connected_store_cache_get(self):
-
         key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
         value = self.store.cache_get(key) or -1
-        self.assertEqual(value, 1)
+        self.assertEqual(value, 1)  # in first time may fail. try again?
 
         key = "uid:123"
         value = self.store.cache_get(key) or -1
         self.assertEqual(value, -1)
 
     def test_on_connected_store_get(self):
-
         key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
         value = self.store.get(key)
         self.assertEqual(value, 1)
@@ -272,6 +270,33 @@ class TestSuite(unittest.TestCase):
     def test_bad_auth(self, request):
         request = api.set_attributes(api.MethodRequest, request)
         self.assertFalse(api.check_auth(request))
+
+    def test_set_attributes(self):
+        request = {"account": "Ой", "login": "", "method": "метод",
+                   "token": "что-то", "arguments": {'аргумент': 'значение'}
+                   }
+        request = api.set_attributes(api.MethodRequest, request)
+        self.assertEqual(request.account, 'Ой')
+        self.assertEqual(request.login, '')
+        self.assertEqual(request.method, 'метод')
+        self.assertEqual(request.token, 'что-то')
+        self.assertEqual(request.arguments, {'аргумент': 'значение'})
+
+        kwargs = {'date': '20.07.2017', 'client_ids': [1, 2, 3, 4]}
+        request = api.set_attributes(api.ClientsInterestsRequest, kwargs)
+        self.assertEqual(request.date, '20.07.2017')
+        self.assertEqual(request.client_ids, [1, 2, 3, 4])
+
+        kwargs = {'first_name': 'имя', 'last_name': 'фамилия', 'gender': 1, 'phone': '79175002040',
+                  'birthday': '01.01.1990', 'email': 'имя@domain.com'
+                  }
+        request = api.set_attributes(api.OnlineScoreRequest, kwargs)
+        self.assertEqual(request.first_name, 'имя')
+        self.assertEqual(request.last_name, 'фамилия')
+        self.assertEqual(request.gender, 1)
+        self.assertEqual(request.phone, '79175002040')
+        self.assertEqual(request.birthday, '01.01.1990')
+        self.assertEqual(request.email, 'имя@domain.com')
 
 
 if __name__ == "__main__":

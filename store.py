@@ -7,6 +7,18 @@ import redis
 
 
 class Store:
+    """Класс предоставляет интерфейс к хранилищу redis
+
+    Метод connect без параметров вызовет ping из redis.client,
+    который в модуле redis.connection создаст сокет
+    или использует уже созданный и выполнит connect.
+
+    В метод connect класса можно передать комманду с аргументами, например redis.get с ключем.
+    В таком случае вернется результат выполнения комманды из redis.
+    В методе get это сделано для того, чтобы иметь возможность attempts попыток подключения
+    прежде чем бросить исключение.
+
+    """
     def __init__(self, host='localhost', port=6379, timeout=3, connect_timeout=20, connect_delay=1, attempts=3):
         self.host = host
         self.port = port
@@ -55,4 +67,5 @@ class Store:
         if response is not None:
             response = json.loads(response)
         return response
+
 
