@@ -47,10 +47,61 @@ NOT_EMPTY_GROUP_ATTR = (('phone', 'email'), ('first_name', 'last_name'), ('birth
 VALIDATION_ERROR_MESSAGE = False
 
 
+class BaseAttributeError(Exception):
+    """
+    Базовый класс ошибок, возникающих при валидации атрибута (поля).
+    На проверке на истинность возвращает False.
+    """
+    def __nonzero__(self):
+        return False
+
+    def __bool__(self):
+        self.__nonzero__()
+
+    def format(self, *args):
+        return self.message.format(*args)
+
+
+class RequiredAttributeError(BaseAttributeError):
+    """
+    Возникает при не соблюдении обязательности атрибута,
+    т.е. если значение None
+    """
+    def __init__(self, *args, **kwargs):
+        self.message = '{}: attribute <{}> is required'
+        super(RequiredAttributeError, self).__init__(*args, **kwargs)
+
+
+class NotNullableAttributeError(BaseAttributeError):
+    """
+    Возникает при не соблюдении правила на "пустость" атрибута
+    """
+    def __init__(self, *args, **kwargs):
+        self.message = '{}: attribute <{}> is not nullable'
+        super(NotNullableAttributeError, self).__init__(*args, **kwargs)
+
+
+class TypeAttributeError(BaseAttributeError):
+    """
+    Возникает при не соответствии значения типу атрибута
+    """
+    def __init__(self, *args, **kwargs):
+        self.message = '{}: invalid type {} of value <{}> for attribute <{}>'
+        super(TypeAttributeError, self).__init__(*args, **kwargs)
+
+
+class InvalidAttributeError(BaseAttributeError):
+    """
+    Возникает при не верных значениях
+    """
+    def __init__(self, *args, **kwargs):
+        self.message = '{}: invalid value <{}> for attribute <{}>'
+        super(InvalidAttributeError, self).__init__(*args, **kwargs)
+
+
 class DeclarativeMeta(type):
 
     def __setattr__(cls, attr, value):
-        result = None
         try:
             attribute = cls.__dict__[attr]
         except KeyError:
@@ -58,10 +109,11 @@ class DeclarativeMeta(type):
         else:
             if hasattr(attribute, 'validate'):
                 result = attribute.validate(value)
-            if isinstance(result, AttributeError):
-                raise AttributeError(result.message.format(cls.__name__, attr))
-            elif result:
-                cls.__dict__[attr].value = value
+                if result:
+                    cls.__dict__[attr].value = value
+                else:
+                    result.message = result.format(cls.__name__, attr)
+                    raise result
 
 
 class FieldBase(object):
@@ -70,16 +122,16 @@ class FieldBase(object):
         self.nullable = nullable
 
     def validate(self, value):
+        # return True or Error
         result = True
         if value is None:
             if self.required:
-                result = AttributeError('{}: attribute <{}> is required')
-        elif not (value or self.nullable) and isinstance(value, self.instance):
-            result = AttributeError('{}: attribute <{}> is not nullable')
-        elif not isinstance(value, self.instance):
-            result = AttributeError(
-                '{}: invalid type {} of value <{}> for attribute <{}>'.format('{}', type(value), value, '{}')
-            )
+                result = RequiredAttributeError()
+        elif value != '' and not isinstance(value, self.instance):
+            result = TypeAttributeError()
+            result.message = result.format('{}', type(value), value, '{}')
+        elif not (value or self.nullable):
+            result = NotNullableAttributeError()
         return result
 
     def __get__(self, instance, owner):
@@ -88,7 +140,9 @@ class FieldBase(object):
 
     @staticmethod
     def _invalid_value(value):
-        return AttributeError('{}: invalid value <{}> for attribute <{}>'.format('{}', value, '{}'))
+        err = InvalidAttributeError()
+        err.message = err.format('{}', value, '{}')
+        return err
 
 
 class CharField(FieldBase):
@@ -134,27 +188,31 @@ class PhoneField(FieldBase):
 
 class DateField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = datetime.datetime
+        self.instance = STR_TYPE
         super(DateField, self).__init__(required, nullable)
 
     def str_to_date(self, value):
-        result = False
-        if hasattr(value, 'split'):
+        result = value
+        if value and hasattr(value, 'split'):
             value = value.split('.')
             value.reverse()
             try:
-                if len(value[0]) < 4:
-                    raise ValueError
-                result = self.instance(*map(int, value))
+                if len(value[0]) == 4:
+                    result = datetime.datetime(*map(int, value))
+                else:
+                    result = False
             except (TypeError, ValueError):
-                return False
-        return value if value is None else result
+                result = False
+        return result
 
     def validate(self, value):
-        date = self.str_to_date(value)
-        result = super(DateField, self).validate(date)
-        if not isinstance(result, AttributeError):
-            result = date if date else self._invalid_value(value)
+        result = super(DateField, self).validate(value)
+        if result:
+            date = self.str_to_date(value)
+            if date is False:
+                result = self._invalid_value(value)
+            else:
+                result = date
         return result
 
 
@@ -164,7 +222,7 @@ class BirthDayField(DateField):
 
     def validate(self, value):
         result = super(BirthDayField, self).validate(value)
-        if not isinstance(result, AttributeError):
+        if result:
             delta = datetime.datetime.now() - result
             if not 0 < delta.days // 365 < 70:
                 return self._invalid_value(value)
@@ -177,12 +235,13 @@ class GenderField(FieldBase):
         super(GenderField, self).__init__(required, nullable)
 
     def validate(self, value):
-        try:
+        result = super(GenderField, self).validate(value)
+        if result:
             if value not in {0, 1, 2}:
-                raise ValueError
-        except (ValueError, TypeError):
-            return self._invalid_value(value)
-        return super(GenderField, self).validate(value)
+                result = self._invalid_value(value)
+            else:
+                result = value
+        return result
 
 
 class ClientIDsField(FieldBase):
@@ -195,11 +254,9 @@ class ClientIDsField(FieldBase):
         return value > 0 if isinstance(value, int) else False
 
     def validate(self, value):
-
         result = super(ClientIDsField, self).validate(value)
-        if result is True and not isinstance(result, AttributeError):
-            if not all(map(self.is_valid_id, value)):
-                return self._invalid_value(value)
+        if result and not all(map(self.is_valid_id, value)):
+            return self._invalid_value(value)
         return result
 
 
@@ -260,8 +317,8 @@ def is_empty_value_in_group_attr(arguments):
 
 
 def method_handler(request, ctx):
+    response = ''
     try:
-        response = ''
         method_request = set_attributes(MethodRequest, request['body'])
         if not check_auth(method_request):
             logging.error('{} User authentication error'.format(ctx["request_id"]))
@@ -277,7 +334,8 @@ def method_handler(request, ctx):
                 # хотя бы одна пара полей из NOT_EMPTY_GROUP_ATTR должна быть с не пустыми значениями
                 if is_empty_value_in_group_attr(method_request.arguments):
                     raise AttributeError(
-                        'there are empty values ​​in all attribute groups {}'.format(
+                        '{}: there are empty values ​​in all attribute groups {}'.format(
+                            method_request.__class__.__name__,
                             ', '.join(map(repr, NOT_EMPTY_GROUP_ATTR))
                         )
                     )
@@ -293,11 +351,11 @@ def method_handler(request, ctx):
                 # вызов запрашиваемого метода из MainHTTPHandler
                 response = json.dumps(requested_method(MainHTTPHandler, **request['body']['arguments']))
             code = OK
-    except AttributeError as err:
+    except (RequiredAttributeError, NotNullableAttributeError, TypeAttributeError,
+            InvalidAttributeError, AttributeError) as err:
         if VALIDATION_ERROR_MESSAGE:
             logging.error('{} {}'.format(ctx["request_id"], err.message))
-        response, code = err.message ,INVALID_REQUEST
-
+        response, code = err.message, INVALID_REQUEST
     return response, code
 
 
@@ -319,7 +377,6 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         if PYTHON2:
             first_name = request.first_name.encode('utf-8')
             last_name = request.last_name.encode('utf-8')
-            birthday = birthday.encode('utf-8')
         else:
             first_name = request.first_name
             last_name = request.last_name
