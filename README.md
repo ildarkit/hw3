@@ -1,6 +1,7 @@
 # Scoring API
 требования:
 - python 2.7
+- redis
 
 запуск сервера:
 
