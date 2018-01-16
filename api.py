@@ -127,7 +127,7 @@ class FieldBase(object):
         if value is None:
             if self.required:
                 result = RequiredAttributeError()
-        elif value != '' and not isinstance(value, self.instance):
+        elif value != '' and not isinstance(value, self.instanceof):
             result = TypeAttributeError()
             result.message = result.format('{}', type(value), value, '{}')
         elif not (value or self.nullable):
@@ -147,13 +147,13 @@ class FieldBase(object):
 
 class CharField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = STR_TYPE
+        self.instanceof = STR_TYPE
         super(CharField, self).__init__(required, nullable)
 
 
 class ArgumentsField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = dict
+        self.instanceof = dict
         super(ArgumentsField, self).__init__(required, nullable)
 
 
@@ -170,7 +170,7 @@ class EmailField(CharField):
 
 class PhoneField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = STR_TYPE
+        self.instanceof = STR_TYPE
         super(PhoneField, self).__init__(required, nullable)
 
     def validate(self, value):
@@ -188,10 +188,11 @@ class PhoneField(FieldBase):
 
 class DateField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = STR_TYPE
+        self.instanceof = STR_TYPE
         super(DateField, self).__init__(required, nullable)
 
-    def str_to_date(self, value):
+    @staticmethod
+    def str_to_date(value):
         result = value
         if value and hasattr(value, 'split'):
             value = value.split('.')
@@ -231,7 +232,7 @@ class BirthDayField(DateField):
 
 class GenderField(FieldBase):
     def __init__(self, required, nullable):
-        self.instance = int
+        self.instanceof = int
         super(GenderField, self).__init__(required, nullable)
 
     def validate(self, value):
@@ -246,7 +247,7 @@ class GenderField(FieldBase):
 
 class ClientIDsField(FieldBase):
     def __init__(self, required, nullable=False):
-        self.instance = list
+        self.instanceof = list
         super(ClientIDsField, self).__init__(required, nullable)
 
     @staticmethod
@@ -372,7 +373,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     @staticmethod
     def online_score(cls, **kwargs):
         request = set_attributes(OnlineScoreRequest, kwargs)
-        birthday = DateField(None, None).str_to_date(request.birthday)
+        birthday = DateField.str_to_date(request.birthday)
         result = dict()
         if PYTHON2:
             first_name = request.first_name.encode('utf-8')

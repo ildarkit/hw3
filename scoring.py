@@ -20,7 +20,7 @@ def get_score(store, phone, email, birthday=None, gender=None, first_name=None, 
         score += 1.5
     if email:
         score += 1.5
-    if birthday and gender:
+    if birthday and gender is not None:
         score += 1.5
     if first_name and last_name:
         score += 0.5

@@ -5,6 +5,7 @@ import unittest
 
 import api
 from store import Store
+import scoring
 
 
 def cases(test_cases):
@@ -23,7 +24,7 @@ class TestSuite(unittest.TestCase):
         self.context = {'request_id': 0}
         self.headers = {}
         self.store = Store()
-        # self.store.connect()
+        self.store.connect()
 
     def get_response(self, request):
         return api.method_handler({"body": request, "headers": self.headers}, self.context)
@@ -260,10 +261,34 @@ class TestSuite(unittest.TestCase):
         value = self.store.cache_get(key) or -1
         self.assertEqual(value, -1)
 
-    def test_on_connected_store_get(self):
-        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
-        value = self.store.get(key)
-        self.assertEqual(value, 1)
+    @cases([{'user_id': 1, 'interest1': 'books', 'interest2': 'cinema'},
+            {'user_id': 2, 'interest1': 'music', 'interest2': 'travel'},
+            {'user_id': 3, 'interest1': 'sport', 'interest2': 'tv'},
+            {'user_id': 4, 'interest1': 'photography', 'interest2': 'tourism'}])
+    def test_on_connected_store_set_get_interests(self, user_interest):
+        key = 'i:{}'.format(user_interest['user_id'])
+        self.store.redis.delete(key)
+        self.store.redis.rpush(key, user_interest['interest1'])
+        self.store.redis.rpush(key, user_interest['interest2'])
+        self.assertEqual(
+            scoring.get_interests(self.store, user_interest['user_id']),
+            [user_interest['interest1'], user_interest['interest2']]
+        )
+
+    @cases([{'first_name': 'ILDAR', 'last_name': 'Shamiev', 'gender': 1, 'phone': '', 'birthday': '01.01.1990',
+             'email': 'имя@domain.com', 'score': 3.5},
+            {'first_name': 'NAME', 'last_name': 'LAST', 'gender': 0, 'phone': '', 'birthday': '01.01.1980',
+             'email': 'имя@domain.com', 'score': 13.7},
+            {'first_name': '', 'last_name': '', 'gender': 0, 'phone': '79175002040', 'birthday': '06.01.2000',
+             'email': '', 'score': 3.0},
+            {'first_name': 'Name', 'last_name': 'name', 'gender': 1, 'phone': '', 'birthday': '13.01.1999',
+             'email': '', 'score': -0.9}])
+    def test_on_connected_store_get_score(self, kwargs):
+        score = kwargs.pop('score')
+        kwargs['birthday'] = api.DateField.str_to_date(kwargs['birthday'])
+        self.store.redis.set('uid:9a423ca46b5c7d79f8d335405e273261', 13.7)
+        self.store.redis.set('uid:99e176a6339c3ed7d753d610e2580f01', -0.9)
+        self.assertAlmostEqual(scoring.get_score(self.store, **kwargs), score, delta=0.1)
 
     @cases([{"account": "horns&hoofs", "login": "h&f", "method": "online_score", "token": "", "arguments": {}},
             {"account": "ой", "login": "h&f", "method": "online_score", "token": "sdd", "arguments": {}},

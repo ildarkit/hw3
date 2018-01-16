@@ -63,9 +63,7 @@ class Store:
         return self._exec_command(self.redis.set, key, value, ex=expire)
 
     def get(self, key):
-        response = self.connect(self.redis.get, key)
-        if response is not None:
-            response = json.loads(response)
+        response = self.connect(self.redis.lrange, key, 0, -1)
         return response
 
 
