@@ -7,7 +7,7 @@ import logging
 import hashlib
 import datetime
 from optparse import OptionParser
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
 from store import Store
 from scoring import get_score
