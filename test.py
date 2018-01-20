@@ -253,10 +253,6 @@ class TestSuite(unittest.TestCase):
         self.assertEqual(value, 1)
 
     def test_on_connected_store_cache_get(self):
-        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
-        value = self.store.cache_get(key) or -1
-        self.assertEqual(value, 1)  # in first time may fail. try again?
-
         key = "uid:123"
         value = self.store.cache_get(key) or -1
         self.assertEqual(value, -1)
