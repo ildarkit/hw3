@@ -177,9 +177,24 @@ class TestSuite(unittest.TestCase):
             self.assertEqual(filled_obj.__dict__[attr].__dict__['value'], value)
 
 
-class StoreTest(unittest.TestCase):
+def has_storage():
+    result = False
+    try:
+        store = Store(connect_timeout=2, attempts=2)
+        store.connect()
+        result = True
+    except:
+        pass
+    return result
+
+
+flag_has_storage = has_storage()
+
+
+@unittest.skipUnless(flag_has_storage, 'Storage tests are skipping')
+class StorageTest(unittest.TestCase):
     def setUp(self):
-        self.store = Store(attempts=3)
+        self.store = Store(connect_timeout=5, attempts=3)
         self.store.connect()
 
     def test_on_disconnected_store_cache_set_cache_get(self):
@@ -195,6 +210,7 @@ class StoreTest(unittest.TestCase):
         self.assertEqual(value, 1)
 
     def test_on_connected_store_cache_set_cache_get(self):
+        self.store.connect()
         key = "uid:123"
         self.store.cache_set(key, 9999, 1)
         value = self.store.cache_get(key) or 0

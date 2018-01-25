@@ -19,7 +19,7 @@ class Store:
     прежде чем бросить исключение.
 
     """
-    def __init__(self, host='localhost', port=6379, timeout=3, connect_timeout=20, connect_delay=1, attempts=None):
+    def __init__(self, host='localhost', port=6379, timeout=3, connect_timeout=20, connect_delay=1, attempts=0):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -33,6 +33,7 @@ class Store:
 
     def connect(self, command=None, *args):
         result = ''
+        self.i = 0
         while True:
             try:
                 if command is None:
@@ -42,9 +43,10 @@ class Store:
                 break
             except (redis.ConnectionError, redis.TimeoutError):
                 time.sleep(self.connect_delay)
-                self.i += 1
                 if self.attempts and self.i == self.attempts:
                     raise
+                else:
+                    self.i += 1
         if result:
             return result
 

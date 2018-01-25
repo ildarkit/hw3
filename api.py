@@ -7,7 +7,7 @@ import logging
 import hashlib
 import datetime
 from optparse import OptionParser
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
 from store import Store
 from scoring import get_score
@@ -364,11 +364,15 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
     router = {
         "method": method_handler
     }
-    # connect без параметров вызовет ping из redis.client,
-    # который в модуле redis.connection создаст сокет
-    # или использует уже созданный и выполнит connect
-    store = Store()
-    store.connect()
+
+    @classmethod
+    def set_storage(cls, storage, *args):
+        cls.store = storage(*args)
+
+    @classmethod
+    def connect_storage(cls):
+        if hasattr(cls, 'store'):
+            cls.store.connect()
 
     @staticmethod
     def online_score(cls, **kwargs):
@@ -439,9 +443,19 @@ if __name__ == "__main__":
     op = OptionParser()
     op.add_option("-p", "--port", action="store", type=int, default=8080)
     op.add_option("-l", "--log", action="store", default=None)
+    op.add_option("-s", "--storage_host", action="store", default='localhost')
+    op.add_option("-P", "--storage_port", action="store", type=int, default='6379')
+    op.add_option("-t", "--storage_timeout", action="store", type=int, default='3')
+    op.add_option("-c", "--storage_connect_timeout", action="store", type=int, default='20')
+    op.add_option("-d", "--storage_connect_delay", action="store", type=int, default='1')
+    op.add_option("-a", "--storage_connect_attemps", action="store", type=int, default='0')
     (opts, args) = op.parse_args()
     logging.basicConfig(filename=opts.log, level=logging.INFO,
                         format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
+    storage_opts = (opts.storage_host, opts.storage_port, opts.storage_timeout,
+                    opts.storage_connect_timeout, opts.storage_connect_delay, opts.storage_connect_attemps)
+    MainHTTPHandler.set_storage(Store, *storage_opts)
+    MainHTTPHandler.connect_storage()
     server = HTTPServer(("localhost", opts.port), MainHTTPHandler)
     logging.info("Starting server at %s" % opts.port)
     try:
