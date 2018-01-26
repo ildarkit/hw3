@@ -1,0 +1,12 @@
+language: python
+python:
+- 2.7
+services:
+- redis-server
+install:
+- pip install -r requirements.txt
+script:
+- python -m unittest test
+notifications:
+  slack:
+    secure: JupEbgtCyTVk7q1SyiRo9TGsm2/PFFCl/ky0XFbMbIMErosAaLvVK/K0dACfj2wHrenoNUgPREcJ2027iSVDIdSj7zuChcWCRLD3D51lwBYFfqpT0WpOCwn4N30cGzl3bIM8Gy6pv0ksK7U+DNwMdZzPK25lKTx5bIryj4gKxUf+8ZOGQ91ThVe13t2M7KVp0IFku76JZYTS22A1Uw4T1u43Y7I60MeRM23YkzIVQydhuKDjm43ESVJEZnRA6jhcUBqcfW1m7jKYBGhOsaksZCL98OQPIDwukK3YehHz1HuHEO+t3VoPUIJJ4ThaiUWnP6KpnJOxx7ZkrtBC8tlsCFy77d+qgohJNKnKiOwGKOcMmUe2YwXZZqGVxHDqyv5xN2oGBunTCNTtV6+LJWxkNkybTkzsHUJeipbFperq47/g0I+UgliNzLV7e3RMNMBlb8bjIZxKw0AtI3nan3A7AVSbj1eEHZm8A08U4Na9rDilRAaxTgycwBKAr0dQiM5benRbJAxBZHcu3aLl1sMKa7pdwOu0zduWav5Y5rdGWhBkoZilM2F4Xp/URtRam5kLBD+mwvB/6C5LPeQ5rACo3nafZYsA/YYACV619x5eUyweOIqvkWMynMlUM786Xr6+oVN1gbL/JM8+7Zqa3F5P1slM32+zdBC9So0l+ZnxSPM=
