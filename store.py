@@ -6,6 +6,17 @@ import time
 import redis
 
 
+def exept_handler(method):
+    def wrapper(self, *args, **kwargs):
+        response = None
+        try:
+            response = method(self, *args, **kwargs)
+        except:
+            pass
+        return response
+    return wrapper
+
+
 class Store:
     """Класс предоставляет интерфейс к хранилищу redis
 
@@ -50,22 +61,19 @@ class Store:
         if result:
             return result
 
-    @staticmethod
-    def _exec_command(command, *args, **kwargs):
-        response = None
-        try:
-            response = command(*args, **kwargs)
-            if response is not None:
+    @exept_handler
+    def cache_get(self, key):
+        response = self.redis.get(key)
+        if response is not None:
+            try:
                 response = json.loads(response)
-        except Exception:
-            pass
+            except ValueError:
+                pass
         return response
 
-    def cache_get(self, key):
-        return self._exec_command(self.redis.get, key)
-
+    @exept_handler
     def cache_set(self, key, value, expire):
-        return self._exec_command(self.redis.set, key, value, ex=expire)
+        return self.redis.set(key, value, ex=expire)
 
     def get(self, key):
         response = self.connect(self.redis.lrange, key, 0, -1)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import socket
 import unittest
 
 import api
@@ -195,37 +196,42 @@ flag_has_storage = has_storage()
 class StorageTest(unittest.TestCase):
     def setUp(self):
         self.store = Store(connect_timeout=5, attempts=3)
-        self.store.connect()
 
     def test_on_disconnected_store_cache_set_cache_get(self):
-        self.store = Store(port=9000, connect_timeout=1)
+        self.store = Store(port=9999, connect_timeout=1, attempts=1)
 
         key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
         self.store.cache_set(key, -1, 60)
         value = self.store.cache_get(key) or 0
         self.assertEqual(value, 0)
 
-        self.store.cache_set(key, 0, 60)
-        value = self.store.cache_get(key) or 1
-        self.assertEqual(value, 1)
-
-    def test_on_connected_store_cache_set_cache_get(self):
+    @cases([{'key': "uid:123456", 'value': 1},
+            {'key': "uid:123456", 'value': "test"}])
+    def test_on_connected_store_get_cache_get(self, kwargs):
         self.store.connect()
-        key = "uid:123"
-        self.store.cache_set(key, 9999, 1)
-        value = self.store.cache_get(key) or 0
-        self.assertEqual(value, 9999)
 
-        key = "uid:c20ad4d76fe97759aa27a0c99bff6710"
-        self.store.cache_set(key, 1, 60 * 60)
-        value = self.store.cache_get(key) or -1
-        self.assertEqual(value, 1)
+        key = kwargs['key']
+        self.store.cache_set(key, kwargs['value'], 60 * 60)
+        value = self.store.cache_get(key) or None
+        self.assertEqual(value, kwargs['value'])
 
-    def test_on_connected_store_cache_get(self):
-        key = "uid:123"
-        value = self.store.cache_get(key) or -1
-        self.assertEqual(value, -1)
+    @cases([{'key': "uid:654321", 'value': 'books'},
+            {'key': "uid:654321", 'value': 'путешествие'}])
+    def test_on_connected_store_get(self, kwargs):
+        self.store.connect()
 
+        key = kwargs['key']
+        self.store.redis.delete(key)
+        self.store.redis.rpush(key, kwargs['value'])
+        value = self.store.get(key) or None
+        self.assertEqual(value, [kwargs['value']])
+
+
+class ScoringTest(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(connect_timeout=5, attempts=3)
+
+    @unittest.skipUnless(flag_has_storage, 'Skipping get_interests cases')
     @cases([{'user_id': 1, 'interest1': 'books', 'interest2': 'cinema'},
             {'user_id': 2, 'interest1': 'music', 'interest2': 'travel'},
             {'user_id': 3, 'interest1': 'sport', 'interest2': 'tv'},
@@ -240,6 +246,7 @@ class StorageTest(unittest.TestCase):
             [user_interest['interest1'], user_interest['interest2']]
         )
 
+    @unittest.skipUnless(flag_has_storage, 'Skipping get_score cases')
     @cases([{'first_name': 'ILDAR', 'last_name': 'Shamiev', 'gender': 1, 'phone': '', 'birthday': '01.01.1990',
              'email': 'имя@domain.com', 'score': 3.5},
             {'first_name': 'NAME', 'last_name': 'LAST', 'gender': 0, 'phone': '', 'birthday': '01.01.1980',
@@ -253,6 +260,19 @@ class StorageTest(unittest.TestCase):
         kwargs['birthday'] = api.DateField.str_to_date(kwargs['birthday'])
         self.store.redis.set('uid:9a423ca46b5c7d79f8d335405e273261', 13.7)
         self.store.redis.set('uid:99e176a6339c3ed7d753d610e2580f01', -0.9)
+        self.assertAlmostEqual(scoring.get_score(self.store, **kwargs), score, delta=0.1)
+
+    @unittest.expectedFailure
+    def test_get_interests(self):
+        self.store = Store(port=9999, connect_timeout=1, attempts=2)
+        self.assertRaises(socket.timeout, scoring.get_interests(self.store, '12345'))
+
+    @cases([{'first_name': 'ILDAR', 'last_name': 'Shamiev', 'gender': 1, 'phone': '', 'birthday': '01.01.1990',
+             'email': 'имя@domain.com', 'score': 3.5}])
+    def test_get_score(self, kwargs):
+        self.store = Store(port=9999, connect_timeout=1, attempts=1)
+        score = kwargs.pop('score')
+        kwargs['birthday'] = api.DateField.str_to_date(kwargs['birthday'])
         self.assertAlmostEqual(scoring.get_score(self.store, **kwargs), score, delta=0.1)
 
 
