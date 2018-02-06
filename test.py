@@ -204,18 +204,18 @@ class ScoringTest(unittest.TestCase):
     def test_on_connected_store_get_score(self, kwargs):
         score = kwargs.pop('score')
         kwargs['birthday'] = api.DateField.str_to_date(kwargs['birthday'])
-        self.store.redis.set('uid:9a423ca46b5c7d79f8d335405e273261', 13.7)
-        self.store.redis.set('uid:99e176a6339c3ed7d753d610e2580f01', -0.9)
+        self.store.cache_set('uid:9a423ca46b5c7d79f8d335405e273261', 13.7, 60 * 60)
+        self.store.cache_set('uid:99e176a6339c3ed7d753d610e2580f01', -0.9, 60 * 60)
         self.assertAlmostEqual(scoring.get_score(self.store, **kwargs), score, delta=0.1)
 
     @unittest.expectedFailure
-    def test_get_interests(self):
+    def test_on_disconnected_store_get_interests(self):
         self.store = Store(port=9999, connect_timeout=1, attempts=2)
         self.assertRaises(socket.timeout, scoring.get_interests(self.store, '12345'))
 
     @cases([{'first_name': 'ILDAR', 'last_name': 'Shamiev', 'gender': 1, 'phone': '', 'birthday': '01.01.1990',
              'email': 'имя@domain.com', 'score': 3.5}])
-    def test_get_score(self, kwargs):
+    def test_on_disconnected_store_get_score(self, kwargs):
         self.store = Store(port=9999, connect_timeout=1, attempts=1)
         score = kwargs.pop('score')
         kwargs['birthday'] = api.DateField.str_to_date(kwargs['birthday'])
