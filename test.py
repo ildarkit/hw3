@@ -32,125 +32,71 @@ class TestSuite(unittest.TestCase):
         _, code = self.get_response({})
         self.assertEqual(api.INVALID_REQUEST, code)
 
-    @cases([{'value': 0, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': [], 'error': api.TypeAttributeError}])
-    def test_bad_char_attribute(self, kwargs):
+    @cases([0, -1, []])
+    def test_bad_char_attribute(self, value):
         attr = api.CharField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': 0, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': {1, }, 'error': api.TypeAttributeError},
-            {'value': '0', 'error': api.TypeAttributeError},
-            {'value': '-1', 'error': api.TypeAttributeError}])
-    def test_bad_arguments_attribute(self, kwargs):
+    @cases([0, -1, {1, }, '0', '-1'])
+    def test_bad_arguments_attribute(self, value):
         attr = api.ArgumentsField(required=True, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': 0, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': '0', 'error': api.InvalidAttributeError},
-            {'value': 'iuejh339 dl93', 'error': api.InvalidAttributeError},
-            {'value': [], 'error': api.TypeAttributeError}])
-    def test_bad_email_attribute(self, kwargs):
+    @cases([0, -1, '0', 'iuejh339 dl93', []])
+    def test_bad_email_attribute(self, value):
         attr = api.EmailField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': '737473dh321', 'error': api.InvalidAttributeError},
-            {'value': 0, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': '790000323732', 'error': api.InvalidAttributeError}])
-    def test_bad_phone_attribute(self, kwargs):
+    @cases(['737473dh321', 0, -1, '790000323732'])
+    def test_bad_phone_attribute(self, value):
         attr = api.PhoneField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': '01.', 'error': api.InvalidAttributeError},
-            {'value': 12122017, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': '32.12.2017', 'error': api.InvalidAttributeError},
-            {'value': '2017.12.31', 'error': api.InvalidAttributeError},
-            {'value': '12.01.17', 'error': api.InvalidAttributeError},
-            {'value': '10.01.200', 'error': api.InvalidAttributeError},
-            {'value': '..', 'error': api.InvalidAttributeError},
-            {'value': [], 'error': api.TypeAttributeError},
-            {'value': -0.0, 'error': api.TypeAttributeError}])
-    def test_bad_date_attribute(self, kwargs):
+    @cases(['01.', 12122017, -1, '32.12.2017', '2017.12.31',
+            '12.01.17', '10.01.200', '..', [], -0.0])
+    def test_bad_date_attribute(self, value):
         attr = api.DateField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': '01.', 'error': api.InvalidAttributeError},
-            {'value': 12122017, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': '32.12.2017', 'error': api.InvalidAttributeError},
-            {'value': '2017.12.31', 'error': api.InvalidAttributeError},
-            {'value': '12.01.17', 'error': api.InvalidAttributeError},
-            {'value': '10.01.200', 'error': api.InvalidAttributeError},
-            {'value': '..', 'error': api.InvalidAttributeError},
-            {'value': [], 'error': api.TypeAttributeError},
-            {'value': -0.0, 'error': api.TypeAttributeError},
-            {'value': '01.01.1917', 'error': api.InvalidAttributeError},
-            {'value': '20.12.3018', 'error': api.InvalidAttributeError}])
-    def test_bad_birthday_attribute(self, kwargs):
+    @cases(['01.', 12122017, -1, '32.12.2017', '2017.12.31',
+            '12.01.17', '10.01.200', '..', [], -0.0, '01.01.1917',
+            '20.12.3018'])
+    def test_bad_birthday_attribute(self, value):
         attr = api.BirthDayField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': '1', 'error': api.TypeAttributeError},
-            {'value': 1.0, 'error': api.TypeAttributeError},
-            {'value': -1, 'error': api.InvalidAttributeError},
-            {'value': 7, 'error': api.InvalidAttributeError},
-            {'value': -2.0, 'error': api.TypeAttributeError},
-            {'value': [], 'error': api.TypeAttributeError},
-            {'value': -0.0, 'error': api.TypeAttributeError}])
-    def test_bad_gender_attribute(self, kwargs):
+    @cases(['1', 1.0, -1, 7, -2.0, [], -0.0])
+    def test_bad_gender_attribute(self, value):
         attr = api.GenderField(required=False, nullable=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'value': [0], 'error': api.InvalidAttributeError},
-            {'value': [-1], 'error': api.InvalidAttributeError},
-            {'value': -1, 'error': api.TypeAttributeError},
-            {'value': 0, 'error': api.TypeAttributeError},
-            {'value': ' ', 'error': api.TypeAttributeError},
-            {'value': '[1, -1, 0]', 'error': api.TypeAttributeError},
-            {'value': -1.0, 'error': api.TypeAttributeError},
-            {'value': [1.0, 2.0, 3.0], 'error': api.InvalidAttributeError}])
-    def test_bad_clientids_attribute(self, kwargs):
+    @cases([[0], [-1], -1, 0, ' ', '[1, -1, 0]', -1.0,
+            [1.0, 2.0, 3.0]])
+    def test_bad_clientids_attribute(self, value):
         attr = api.ClientIDsField(required=True)
-        obj_exc = attr.validate(kwargs['value'])
-        self.assertIsInstance(obj_exc, kwargs['error'])
+        self.assertFalse(attr.validate(value))
 
-    @cases([{'attr': api.ClientIDsField(required=True)},
-            {'attr': api.GenderField(required=True, nullable=True)},
-            {'attr': api.BirthDayField(required=True, nullable=True)},
-            {'attr': api.DateField(required=True, nullable=True)},
-            {'attr': api.PhoneField(required=True, nullable=True)},
-            {'attr': api.EmailField(required=True, nullable=True)},
-            {'attr': api.ArgumentsField(required=True, nullable=True)},
-            {'attr': api.CharField(required=True, nullable=True)}])
-    def test_required_attributes(self, kwargs):
-        attr = kwargs['attr']
-        obj_exc = attr.validate(None)
-        self.assertIsInstance(obj_exc, api.RequiredAttributeError)
+    @cases([api.ClientIDsField(required=True),
+            api.GenderField(required=True, nullable=True),
+            api.BirthDayField(required=True, nullable=True),
+            api.DateField(required=True, nullable=True),
+            api.PhoneField(required=True, nullable=True),
+            api.EmailField(required=True, nullable=True),
+            api.ArgumentsField(required=True, nullable=True),
+            api.CharField(required=True, nullable=True)])
+    def test_required_attributes(self, value):
+        self.assertFalse(value.validate(None))
 
-    @cases([{'attr': api.ClientIDsField(required=True)},
-            {'attr': api.GenderField(required=True, nullable=False)},
-            {'attr': api.BirthDayField(required=True, nullable=False)},
-            {'attr': api.DateField(required=True, nullable=False)},
-            {'attr': api.PhoneField(required=True, nullable=False)},
-            {'attr': api.EmailField(required=True, nullable=False)},
-            {'attr': api.ArgumentsField(required=True, nullable=False)},
-            {'attr': api.CharField(required=True, nullable=False)}])
-    def test_nullable_attributes(self, kwargs):
-        attr = kwargs['attr']
-        obj_exc = attr.validate('')
-        self.assertIsInstance(obj_exc, api.NotNullableAttributeError)
+    @cases([api.ClientIDsField(required=True),
+            api.GenderField(required=True, nullable=False),
+            api.BirthDayField(required=True, nullable=False),
+            api.DateField(required=True, nullable=False),
+            api.PhoneField(required=True, nullable=False),
+            api.EmailField(required=True, nullable=False),
+            api.ArgumentsField(required=True, nullable=False),
+            api.CharField(required=True, nullable=False)])
+    def test_nullable_attributes(self, value):
+        self.assertFalse(value.validate(''))
 
     @cases([{"account": "horns&hoofs", "login": "h&f", "method": "online_score", "token": "", "arguments": {}},
             {"account": "ой", "login": "h&f", "method": "online_score", "token": "sdd", "arguments": {}},
