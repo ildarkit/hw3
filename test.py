@@ -130,7 +130,7 @@ def has_storage():
         store = Store(connect_timeout=2, attempts=2)
         store.connect()
         result = True
-    except:
+    except socket.error:
         pass
     return result
 
@@ -152,13 +152,13 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(value, 0)
 
     @cases([{'key': "uid:123456", 'value': 1},
-            {'key': "uid:123456", 'value': "test"}])
+            {'key': "uid:123456", 'value': -3.7}])
     def test_on_connected_store_get_cache_get(self, kwargs):
         self.store.connect()
 
         key = kwargs['key']
         self.store.cache_set(key, kwargs['value'], 60 * 60)
-        value = self.store.cache_get(key) or None
+        value = self.store.cache_get(key) or 0
         self.assertEqual(value, kwargs['value'])
 
     @cases([{'key': "uid:654321", 'value': 'books'},
