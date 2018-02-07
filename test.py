@@ -4,6 +4,8 @@
 import socket
 import unittest
 
+import redis
+
 import api
 import scoring
 from store import Store
@@ -130,7 +132,7 @@ def has_storage():
         store = Store(connect_timeout=2, attempts=2)
         store.connect()
         result = True
-    except socket.error:
+    except redis.ConnectionError:
         pass
     return result
 
