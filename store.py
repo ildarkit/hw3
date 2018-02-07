@@ -36,19 +36,22 @@ class Store(object):
                                  socket_connect_timeout=self.connect_timeout)
 
     def connect(self):
-        self.i = 0
-        while True:
+        self.i = 1
+        loop = True
+        while loop:
             try:
                 connection = self.redis.connection_pool.get_connection('')
                 connection.connect()
-                self.redis.connection_pool.release(connection)
-                break
+                loop = False
             except (redis.ConnectionError, redis.TimeoutError):
                 time.sleep(self.connect_delay)
                 if self.attempts and self.i == self.attempts:
                     raise
                 else:
                     self.i += 1
+            finally:
+                # возвращаем коннекшн в пул соединений
+                self.redis.connection_pool.release(connection)
 
     @staticmethod
     def reconnect(method):
