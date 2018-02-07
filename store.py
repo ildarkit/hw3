@@ -61,7 +61,7 @@ class Store(object):
         return wrapper
 
     @exept_handler
-    @reconnect.__get__(object, type)
+    @reconnect.__func__
     def cache_get(self, key):
         response = self.redis.get(key)
         if response is not None:
@@ -69,11 +69,11 @@ class Store(object):
         return response
 
     @exept_handler
-    @reconnect.__get__(object, type)
+    @reconnect.__func__
     def cache_set(self, key, value, expire):
         return self.redis.set(key, value, ex=expire)
 
-    @reconnect.__get__(object, type)
+    @reconnect.__func__
     def get(self, key):
         response = self.redis.lrange(key, 0, -1)
         return response
